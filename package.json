@@ -1,0 +1,39 @@
+{
+  "name": "histograph-reasoning",
+  "version": "0.0.1",
+  "description": "Find relations between PITs from two different data sources, based upon set of rules",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/histograph/reasoning.git"
+  },
+  "scripts": {
+    "test": "jshint index.js && jscs index.js"
+  },
+  "author": "Bert Spaan",
+  "license": "GPLv3",
+  "devDependencies": {
+    "jscs": "^1.10.0",
+    "jshint": "^2.6.0",
+    "tape": "^3.4.0"
+  },
+  "jshintConfig": {
+    "node": true,
+    "globalstrict": false,
+    "undef": true,
+    "unused": true,
+    "noarg": true
+  },
+  "jscsConfig": {
+    "preset": "airbnb",
+    "requireCamelCaseOrUpperCaseIdentifiers": null,
+    "disallowMultipleVarDecl": true,
+    "requireMultipleVarDecl": null
+  },
+  "dependencies": {
+    "colors": "^1.1.0",
+    "elasticsearch": "^4.1.0",
+    "highland": "^2.5.1",
+    "turf": "^2.0.2"
+  }
+}

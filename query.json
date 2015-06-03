@@ -1,0 +1,24 @@
+{
+  "_source": [
+    "name",
+    "hgid"
+  ],
+  "query": {
+    "filtered": {
+      "filter": {
+        "bool": {
+          "must": null
+        }
+      },
+      "query": {
+        "query_string": {
+          "query": "",
+          "fields": [
+            "pit.name"
+          ]
+        }
+      }
+    }
+  },
+  "size": 1
+}
