@@ -13,8 +13,8 @@ var _ = require('highland');
 require('colors');
 
 var sources = [
-  'bag'
-  // 'tgn',
+  'bag',
+  'tgn'
   // 'nwb.leiden'
 ];
 
@@ -96,7 +96,10 @@ function infer(data, callback) {
         callback(null, relation);
       } else {
         console.log(util.format('No relation found: %s (id: %s)', pit.name, pit.id).red);
-        callback(null, {hond: true});
+        var error = {
+          error: util.format('No relation found: %s (id: %s)', pit.name, pit.id)
+        };
+        callback(null, error);
       }
     } else {
       callback(null, {hond: true});
@@ -148,16 +151,18 @@ async.eachSeries(sources, function(source, callback) {
     _.intersperse('\n')
   );
 
-  var filename = path.join('..', 'data', 'bag', 'bag.place.pits.ndjson');
+  // var filename = path.join('..', 'data', 'bag', 'bag.place.pits.ndjson');
   // Dit is goede:
-  // var filename = path.join(config.api.dataDir, 'sources', source, 'current', 'pits.ndjson');
+  var filename = path.join(config.api.dataDir, 'sources', source, 'current', 'pits.ndjson');
   var writeStream = fs.createWriteStream(util.format('%s.inferred.ndjson', source), {encoding: 'utf8'});
 
   fs.createReadStream(filename, {encoding: 'utf8'})
     .pipe(through)
     .pipe(writeStream)
     .on('close', function() {
-      client.close();
+      callback();
     })
+}, function() {
+  client.close();
 });
 
