@@ -8,10 +8,7 @@ module.exports = {
       textDistance: 2,
       geoDistance: 10000,
       relation: 'hg:sameHgConcept',
-      filters: {
-        from: null,
-        to: null
-      }
+      filter: null
     },
   ]
 }

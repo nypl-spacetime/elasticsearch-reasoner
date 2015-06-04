@@ -9,12 +9,9 @@ module.exports = {
   //     geoDistance: 4000,
   //     textDistance: 2,
   //     relation: 'hg:sameHgConcept',
-  //     filters: {
-  //       from: function(pit) {
-  //         // Do not use TGN term objects
-  //         return pit.uri.indexOf('term') == -1;
-  //       },
-  //       to: null
+  //     filter: function(pit) {
+  //       // Do not use TGN term objects
+  //       return pit.uri.indexOf('term') == -1;
   //     }
   //   },
   //
@@ -25,12 +22,9 @@ module.exports = {
   //     },
   //     textDistance: 1,
   //     relation: 'hg:sameHgConcept',
-  //     filters: {
-  //       from: function(pit) {
-  //         // Do not use TGN term objects
-  //         return pit.uri.indexOf('term') == -1;
-  //       },
-  //       to: null
+  //     filter: function(pit) {
+  //       // Do not use TGN term objects
+  //       return pit.uri.indexOf('term') == -1;
   //     }
   //   },
   //
@@ -44,12 +38,9 @@ module.exports = {
   //       return 'Kingdom of the Netherlands';
   //     },
   //     relation: 'hg:sameHgConcept',
-  //     filters: {
-  //       from: function(pit) {
-  //         // Do not use TGN term objects
-  //         return pit.uri.indexOf('term') == -1;
-  //       },
-  //       to: null
+  //     filter: function(pit) {
+  //       // Do not use TGN term objects
+  //       return pit.uri.indexOf('term') == -1;
   //     }
   //   }
   //

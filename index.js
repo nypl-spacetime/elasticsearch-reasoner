@@ -23,132 +23,141 @@ function isFunction(functionToCheck) {
  return functionToCheck && getType.toString.call(functionToCheck) === '[object Function]';
 }
 
-function infer(rules, pit) {
+function hasLength(str) {
+  return str.length > 0;
+}
+
+function infer(data, callback) {
+  var rule = data.rule;
+  var pit = data.pit;
+
   var centroid;
   if (pit.geometry) {
     centroid = turf.centroid(pit.geometry).geometry.coordinates;
   }
 
-  _(Object.keys(rules))
-    .map(function(toSource) {
-      return rules[toSource].map(function(rule) {
-        return {
-          sourceid: toSource,
-          rule: rule
+  query.query.filtered.filter.bool.must = [
+    {
+      term: {
+        type: rule.types.to
+      }
+    },
+    {
+      term: {
+        sourceid: data.ruleSourceid
+      }
+    }
+  ];
+
+  if (rule.geoDistance) {
+    query.query.filtered.filter.bool.must.push({
+      geo_shape: {
+        geometry: {
+          shape: {
+            type : 'circle',
+            coordinates : centroid,
+            radius : util.format('%dm', rule.geoDistance)
+          }
+        }
+      }
+    });
+  }
+
+  // TODO: alles in rules: of default, of constant, of function(pit)
+
+  var name;
+  if (isFunction(rule.name)) {
+    name = rule.name(pit);
+  } else if (rule.name) {
+    name = rule.name;
+  } else {
+    name = pit.name;
+  }
+
+  name = name.replace(')', '').replace('(', '');
+
+  var textDistance = rule.textDistance ? rule.textDistance : 0;
+  query.query.filtered.query.query_string.query = util.format('%s~%d', name, textDistance);
+
+  client.search({
+    index: config.elasticsearch.index,
+    type: 'pit',
+    body: query
+  }, function (err, resp) {
+    if (!err) {
+      if (resp.hits.hits.length > 0) {
+        var hit = resp.hits.hits[0];
+        console.log(util.format('Relation: %s -> %s', pit.name, hit._source.name).green);
+        var relation = {
+          from: pit.id,
+          to: hit._source.hgid,
+          label: rule.relation
         };
-      });
-    })
-    .sequence()
-    .filter(function(r) {
-      return r.rule.types.from === pit.type || (r.rule.types.from.constructor === Array
-        && r.rule.types.from.indexOf(pit.type) > -1);
-    })
-    .filter(function(r) {
-      if (r.rule.filters && r.rule.filters.from) {
-        return r.rule.filters.from(pit)
-      }
-      return true;
-    })
-    .each(function(r) {
-      var rule = r.rule;
-
-      query.query.filtered.filter.bool.must = [
-        {
-          term: {
-            type: rule.types.to
-          }
-        },
-        {
-          term: {
-            sourceid: r.sourceid
-          }
-        }
-      ];
-
-      if (rule.geoDistance) {
-        query.query.filtered.filter.bool.must.push({
-          geo_shape: {
-            geometry: {
-              shape: {
-                type : 'circle',
-                coordinates : centroid,
-                radius : util.format('%dm', rule.geoDistance)
-              }
-            }
-          }
-        });
-      }
-
-      var name;
-      if (isFunction(rule.name)) {
-        name = rule.name(pit);
-      } else if (rule.name) {
-        name = rule.name;
+        callback(null, relation);
       } else {
-        name = pit.name;
+        console.log(util.format('No relation found: %s (id: %s)', pit.name, pit.id).red);
+        callback(null, {hond: true});
       }
-
-      var textDistance = rule.textDistance ? rule.textDistance : 0;
-      query.query.filtered.query.query_string.query = util.format('%s~%d', name, textDistance);
-
-      console.log(JSON.stringify(query))
-
-      client.search({
-        index: config.elasticsearch.index,
-        type: 'pit',
-        body: query
-      }).then(function(resp) {
-        if (resp.hits.hits.length > 0) {
-          var hit = resp.hits.hits[0];
-          console.log(util.format('Relation: %s -> %s', pit.name, hit._source.name).green);
-          var relation = {
-            from: pit.id,
-            to: hit._source.hgid,
-            label: rule.relation
-          };
-          console.log(JSON.stringify(relation));
-        } else {
-          console.log(util.format('No relation found: %s (id: %s)', pit.name, pit.id).red);
-        }
-      },
-
-      function(err) {
-        // console.log(err);
-      });
-
-
-      // console.log(pit)
-      // voer rule uit!
-      // zoek in ES naar relevante pits
-      //   met name = pit.name~rule.textDistance
-      //   en type IN rule.types.to
-      //   en afstand pit.geom.centroid < rule.geoDistance
-      //   turf.centroid(poly);
-      // output relaties! (Naar bestand of naar neo!)
-      //console.log(rules, pit);
-
-    })
-}
-
-function hasLength(str) {
-  return str.length > 0;
+    } else {
+      callback(null, {hond: true});
+    }
+  });
 }
 
 // TODO: remove async, use highland only
 async.eachSeries(sources, function(source, callback) {
+  var rules = require('./' + source + '.rules');
+
   var through = _.pipeline(
     _.split(),
     _.filter(hasLength),
-    _.map(JSON.parse)
+    _.map(JSON.parse),
+    _.map(function(pit) {
+      return _(Object.keys(rules)).map(function(ruleSourceid) {
+        return _(rules[ruleSourceid])
+          .filter(function(rule) {
+            // Filter on PIT type for which rule is defined
+            return rule.types.from === pit.type || (rule.types.from.constructor === Array
+                && rule.types.from.indexOf(pit.type) > -1);
+          })
+          .filter(function(rule) {
+            // Apply the rule's general filter function (if defined)
+            if (rule.filter && isFunction(rule.filter)) {
+              return rule.filter(pit)
+            }
+            return true;
+          })
+          .map(function(rule) {
+            // Return PIT, rule and sourceid in one object
+            return {
+              pit: pit,
+              ruleSourceid: ruleSourceid,
+              rule: rule
+            }
+          });
+      });
+    }),
+    _.flatten(),
+    // _.take(1000),
+    _.map(function(data) {
+      return _.curry(infer, data);
+    }),
+    _.nfcall([]),
+    _.parallel(10),
+    _.map(JSON.stringify),
+    _.intersperse('\n')
   );
 
-  var rules = require('./' + source + '.rules');
   var filename = path.join('..', 'data', 'bag', 'bag.place.pits.ndjson');
   // Dit is goede:
   // var filename = path.join(config.api.dataDir, 'sources', source, 'current', 'pits.ndjson');
+  var writeStream = fs.createWriteStream(util.format('%s.inferred.ndjson', source), {encoding: 'utf8'});
+
   fs.createReadStream(filename, {encoding: 'utf8'})
-      .pipe(through)
-      .each(_.curry(infer, rules))
-      .done(callback);
+    .pipe(through)
+    .pipe(writeStream)
+    .on('close', function() {
+      client.close();
+    })
 });
 
