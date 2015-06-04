@@ -13,17 +13,13 @@ var _ = require('highland');
 require('colors');
 
 var sources = [
-  // 'tgn',
+  'tgn',
   'bag'
 ];
 
 function isFunction(functionToCheck) {
- var getType = {};
- return functionToCheck && getType.toString.call(functionToCheck) === '[object Function]';
-}
-
-function hasLength(str) {
-  return str.length > 0;
+  var getType = {};
+  return functionToCheck && getType.toString.call(functionToCheck) === '[object Function]';
 }
 
 function infer(data, callback) {
@@ -53,9 +49,9 @@ function infer(data, callback) {
       geo_shape: {
         geometry: {
           shape: {
-            type : 'circle',
-            coordinates : centroid,
-            radius : util.format('%dm', rule.geoDistance)
+            type: 'circle',
+            coordinates: centroid,
+            radius: util.format('%dm', rule.geoDistance)
           }
         }
       }
@@ -84,7 +80,9 @@ function infer(data, callback) {
     index: config.elasticsearch.index,
     type: 'pit',
     body: query
-  }).then(function (res) {
+  }).then(function(res) {
+    var result;
+
     if (res.hits.hits.length > 0) {
       var hit = res.hits.hits[0];
       var relation = {
@@ -93,14 +91,14 @@ function infer(data, callback) {
         label: rule.relation
       };
 
-      var result = {
+      result = {
         relation: relation,
         message: util.format('Relation: %s -> %s', pit.name, hit._source.name)
       };
 
       callback(null, result);
     } else {
-      var result = {
+      result = {
         error: {
           from: pit.id
         },
@@ -108,8 +106,10 @@ function infer(data, callback) {
       };
       callback(null, result);
     }
-  }, function (error) {
-    callback(error)
+  },
+
+  function(error) {
+    callback(error);
   });
 }
 
@@ -132,14 +132,15 @@ async.eachSeries(sources, function(source, callback) {
         return _(rules[ruleSourceid])
           .filter(function(rule) {
             // Filter on PIT type for which rule is defined
-            return rule.types.from === pit.type || (rule.types.from.constructor === Array
-                && rule.types.from.indexOf(pit.type) > -1);
+            return rule.types.from === pit.type ||
+              (rule.types.from.constructor === Array && rule.types.from.indexOf(pit.type) > -1);
           })
           .filter(function(rule) {
             // Apply the rule's general filter function (if defined)
             if (rule.filter && isFunction(rule.filter)) {
-              return rule.filter(pit)
+              return rule.filter(pit);
             }
+
             return true;
           })
           .map(function(rule) {
@@ -148,7 +149,7 @@ async.eachSeries(sources, function(source, callback) {
               pit: pit,
               ruleSourceid: ruleSourceid,
               rule: rule
-            }
+            };
           });
       });
     })
@@ -159,8 +160,8 @@ async.eachSeries(sources, function(source, callback) {
     .nfcall([])
     .parallel(10)
     .errors(function(err) {
-      console.log(err)
-    })
+      console.log(err);
+    });
 
   stream
     .fork()
@@ -177,7 +178,7 @@ async.eachSeries(sources, function(source, callback) {
     .compact()
     .map(JSON.stringify)
     .intersperse('\n')
-    .pipe(relationsStream)
+    .pipe(relationsStream);
 
   stream
     .fork()
@@ -185,9 +186,11 @@ async.eachSeries(sources, function(source, callback) {
     .compact()
     .map(JSON.stringify)
     .intersperse('\n')
-    .pipe(errorsStream)
+    .pipe(errorsStream);
 
-}, function() {
+},
+
+function() {
   client.close();
 });
 
