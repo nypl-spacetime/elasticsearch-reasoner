@@ -13,9 +13,8 @@ var _ = require('highland');
 require('colors');
 
 var sources = [
-  'bag',
-  'tgn'
-  // 'nwb.leiden'
+  'tgn',
+  'bag'
 ];
 
 function isFunction(functionToCheck) {
@@ -79,31 +78,36 @@ function infer(data, callback) {
   var textDistance = rule.textDistance ? rule.textDistance : 0;
   query.query.filtered.query.query_string.query = util.format('%s~%d', name, textDistance);
 
+  // console.log(JSON.stringify(query))
+
   client.search({
     index: config.elasticsearch.index,
     type: 'pit',
     body: query
-  }, function (err, resp) {
-    if (!err) {
-      if (resp.hits.hits.length > 0) {
-        var hit = resp.hits.hits[0];
-        console.log(util.format('Relation: %s -> %s', pit.name, hit._source.name).green);
-        var relation = {
-          from: pit.id,
-          to: hit._source.hgid,
-          label: rule.relation
-        };
-        callback(null, relation);
-      } else {
-        console.log(util.format('No relation found: %s (id: %s)', pit.name, pit.id).red);
-        var error = {
-          error: util.format('No relation found: %s (id: %s)', pit.name, pit.id)
-        };
-        callback(null, error);
-      }
+  }).then(function (res) {
+    if (res.hits.hits.length > 0) {
+      var hit = res.hits.hits[0];
+      var relation = {
+        from: pit.id,
+        to: hit._source.hgid,
+        label: rule.relation
+      };
+
+      var result = {
+        relation: relation,
+        message: util.format('Relation: %s -> %s', pit.name, hit._source.name)
+      };
+
+      callback(null, result);
     } else {
-      callback(null, {hond: true});
+      var result = {
+        error: pit.id,
+        message: util.format('No relation found: %s (id: %s)', pit.name, pit.id)
+      };
+      callback(null, result);
     }
+  }, function (error) {
+    callback(error)
   });
 }
 
@@ -111,11 +115,17 @@ function infer(data, callback) {
 async.eachSeries(sources, function(source, callback) {
   var rules = require('./' + source + '.rules');
 
-  var through = _.pipeline(
-    _.split(),
-    _.filter(hasLength),
-    _.map(JSON.parse),
-    _.map(function(pit) {
+  var filename = path.join(config.api.dataDir, 'sources', source, 'current', 'pits.ndjson');
+
+  var relationsStream = fs.createWriteStream(util.format('%s.inferred.ndjson', source), {encoding: 'utf8'});
+  var errorsStream = fs.createWriteStream(util.format('%s.inferred.errors.ndjson', source), {encoding: 'utf8'});
+  var logStream = fs.createWriteStream(util.format('%s.inferred.log', source), {encoding: 'utf8'});
+
+  var stream = _(fs.createReadStream(filename, {encoding: 'utf8'}))
+    .split()
+    .compact()
+    .map(JSON.parse)
+    .map(function(pit) {
       return _(Object.keys(rules)).map(function(ruleSourceid) {
         return _(rules[ruleSourceid])
           .filter(function(rule) {
@@ -139,29 +149,38 @@ async.eachSeries(sources, function(source, callback) {
             }
           });
       });
-    }),
-    _.flatten(),
-    // _.take(1000),
-    _.map(function(data) {
+    })
+    .flatten()
+    .map(function(data) {
       return _.curry(infer, data);
-    }),
-    _.nfcall([]),
-    _.parallel(10),
-    _.map(JSON.stringify),
-    _.intersperse('\n')
-  );
+    })
+    .nfcall([])
+    .parallel(10)
 
-  // var filename = path.join('..', 'data', 'bag', 'bag.place.pits.ndjson');
-  // Dit is goede:
-  var filename = path.join(config.api.dataDir, 'sources', source, 'current', 'pits.ndjson');
-  var writeStream = fs.createWriteStream(util.format('%s.inferred.ndjson', source), {encoding: 'utf8'});
-
-  fs.createReadStream(filename, {encoding: 'utf8'})
-    .pipe(through)
-    .pipe(writeStream)
+  stream
+    .fork()
+    .pluck('message')
+    .intersperse('\n')
+    .pipe(logStream)
     .on('close', function() {
       callback();
-    })
+    });
+
+  stream
+    .fork()
+    .pluck('relation')
+    .compact()
+    .map(JSON.stringify)
+    .intersperse('\n')
+    .pipe(relationsStream)
+
+  stream
+    .fork()
+    .pluck('error')
+    .compact()
+    .intersperse('\n')
+    .pipe(errorsStream)
+
 }, function() {
   client.close();
 });

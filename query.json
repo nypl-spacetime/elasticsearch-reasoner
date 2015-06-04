@@ -12,7 +12,7 @@
       },
       "query": {
         "query_string": {
-          "query": "",
+          "query": null,
           "fields": [
             "pit.name"
           ]
