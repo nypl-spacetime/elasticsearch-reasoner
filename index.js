@@ -13,7 +13,7 @@ var _ = require('highland');
 require('colors');
 
 var sources = [
-  'tgn',
+  // 'tgn',
   'bag'
 ];
 
@@ -101,7 +101,9 @@ function infer(data, callback) {
       callback(null, result);
     } else {
       var result = {
-        error: pit.id,
+        error: {
+          from: pit.id
+        },
         message: util.format('No relation found: %s (id: %s)', pit.name, pit.id)
       };
       callback(null, result);
@@ -156,6 +158,9 @@ async.eachSeries(sources, function(source, callback) {
     })
     .nfcall([])
     .parallel(10)
+    .errors(function(err) {
+      console.log(err)
+    })
 
   stream
     .fork()
@@ -178,6 +183,7 @@ async.eachSeries(sources, function(source, callback) {
     .fork()
     .pluck('error')
     .compact()
+    .map(JSON.stringify)
     .intersperse('\n')
     .pipe(errorsStream)
 
