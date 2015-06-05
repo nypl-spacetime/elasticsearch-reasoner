@@ -188,13 +188,15 @@ function inferSource(source, callback) {
     .pipe(errorsStream);
 }
 
-
-
 _(sources)
   .filter(function(source) {
     return argv._.length === 0 || argv._.indexOf(source) > -1;
   })
-  // TODO: read rules.json
+  .map(function(source) {
+    // TODO: read rules.json
+    return source;
+  })
+  .compact()
   .map(function(source) {
     return _.curry(inferSource, source);
   })
