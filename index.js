@@ -2,14 +2,14 @@ var fs = require('fs');
 var path = require('path');
 var util = require('util');
 var turf = require('turf');
+var _ = require('highland');
 var elasticsearch = require('elasticsearch');
 var config = require(process.env.HISTOGRAPH_CONFIG);
 var query = require('./query.json');
 var client = new elasticsearch.Client({
   host: config.elasticsearch.host + ':' + config.elasticsearch.port
 });
-var async = require('async');
-var _ = require('highland');
+var argv = require('minimist')(process.argv.slice(2));
 require('colors');
 
 var sources = [
@@ -188,8 +188,12 @@ function inferSource(source, callback) {
     .pipe(errorsStream);
 }
 
+
+
 _(sources)
-  // TODO: filter sources in argv
+  .filter(function(source) {
+    return argv._.length === 0 || argv._.indexOf(source) > -1;
+  })
   // TODO: read rules.json
   .map(function(source) {
     return _.curry(inferSource, source);
