@@ -113,8 +113,7 @@ function infer(data, callback) {
   });
 }
 
-// TODO: remove async, use highland only
-async.eachSeries(sources, function(source, callback) {
+function inferSource(source, callback) {
   var rules = require('./' + source + '.rules');
 
   var filename = path.join(config.api.dataDir, 'sources', source, 'current', 'pits.ndjson');
@@ -187,10 +186,16 @@ async.eachSeries(sources, function(source, callback) {
     .map(JSON.stringify)
     .intersperse('\n')
     .pipe(errorsStream);
+}
 
-},
-
-function() {
-  client.close();
-});
-
+_(sources)
+  // TODO: filter sources in argv
+  // TODO: read rules.json
+  .map(function(source) {
+    return _.curry(inferSource, source);
+  })
+  .nfcall([])
+  .series()
+  .done(function() {
+    client.close();
+  });
