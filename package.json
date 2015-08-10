@@ -11,7 +11,7 @@
     "test": "jshint index.js && jscs index.js"
   },
   "author": "Bert Spaan",
-  "license": "GPLv3",
+  "license": "GPL-3.0",
   "devDependencies": {
     "jscs": "^1.10.0",
     "jshint": "^2.6.0",
@@ -34,7 +34,8 @@
     "colors": "^1.1.0",
     "elasticsearch": "^4.1.0",
     "highland": "^2.5.1",
-    "histograph-uri-normalizer": "git://github.com/histograph/uri-normalizer",
+    "histograph-uri-normalizer": "histograph/uri-normalizer",
+    "histograph-config": "histograph/config",
     "minimist": "^1.1.1",
     "turf": "^2.0.2"
   }

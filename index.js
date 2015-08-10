@@ -4,7 +4,7 @@ var util = require('util');
 var turf = require('turf');
 var _ = require('highland');
 var elasticsearch = require('elasticsearch');
-var config = require(process.env.HISTOGRAPH_CONFIG);
+var config = require('histograph-config');
 var query = require('./query.json');
 var normalize = require('histograph-uri-normalizer').normalize;
 var client = new elasticsearch.Client({
@@ -18,40 +18,40 @@ function isFunction(functionToCheck) {
   return functionToCheck && getType.toString.call(functionToCheck) === '[object Function]';
 }
 
-function getUriOrId(source, uri, id) {
+function getUriOrId(dataset, uri, id) {
   var result = uri;
   if (id) {
     result = id;
-    if (id.indexOf('/') > -1) {
-      result = source + '/' + id;
+    if (id.toString().indexOf('/') > -1) {
+      result = dataset + '/' + id;
     }
   }
   return result;
 }
 
-function ensureDir(inferredDir, source) {
+function ensureDir(inferredDir, dataset) {
   try {
-    fs.mkdirSync(path.join('.', inferredDir, util.format('%s.%s', source, inferredDir)));
+    fs.mkdirSync(path.join('.', inferredDir, util.format('%s.%s', dataset, inferredDir)));
   } catch(e) {
     // Ha! Do nothing!
   }
 }
 
-function createWriteStream(inferredDir, source, str) {
-  return fs.createWriteStream(path.join('.', inferredDir, util.format('%s.%s', source, inferredDir), util.format('%s.%s.%s', source, inferredDir, str)), {encoding: 'utf8'});
+function createWriteStream(inferredDir, dataset, str) {
+  return fs.createWriteStream(path.join('.', inferredDir, util.format('%s.%s', dataset, inferredDir), util.format('%s.%s.%s', dataset, inferredDir, str)), {encoding: 'utf8'});
 }
 
 function infer(data, callback) {
   var rule = data.rule;
   var pit = data.pit;
-  var urn = normalize(pit.id || pit.uri, data.ruleSourceid);
+  var urn = normalize(pit.id || pit.uri, data.ruleDatasetid);
 
   // Check if PIT's URI or ID is present in rule's override list
   if (data.normalizedOverride[urn] !== undefined) {
     if (data.normalizedOverride[urn]) {
 
       var relation = {
-        from: getUriOrId(data.source, pit.uri, pit.id),
+        from: getUriOrId(data.dataset, pit.uri, pit.id),
         to: data.normalizedOverride[urn].to,
         type: rule.relation
       };
@@ -116,7 +116,7 @@ function infer(data, callback) {
     query.query.filtered.query.query_string.query = util.format('%s~%d', name, textDistance);
 
     client.search({
-      index: data.ruleSourceid,
+      index: data.ruleDatasetid,
       //type: 'hg:Place',
       body: query
     }).then(function(res) {
@@ -126,8 +126,8 @@ function infer(data, callback) {
         var hit = res.hits.hits[0];
 
         var relation = {
-          from: getUriOrId(data.source, pit.uri, pit.id),
-          to: getUriOrId(data.ruleSourceid, hit._source.uri, hit._source.id),
+          from: getUriOrId(data.dataset, pit.uri, pit.id),
+          to: getUriOrId(data.ruleDatasetid, hit._source.uri, hit._source.id),
           type: rule.relation
         };
 
@@ -147,36 +147,36 @@ function infer(data, callback) {
   }
 }
 
-function inferSource(obj, callback) {
-  var source = obj.source
+function inferDataset(obj, callback) {
+  var dataset = obj.dataset
   var rules = require('./' + obj.filename);
-  var pitsFile = path.join(config.api.dataDir, 'sources', source, 'current', 'pits.ndjson');
+  var pitsFile = path.join(config.api.dataDir, 'datasets', dataset, 'current', 'pits.ndjson');
   var inferredDir = 'inferred';
 
-  ensureDir(inferredDir, source);
+  ensureDir(inferredDir, dataset);
 
-  var relationsStream = createWriteStream(inferredDir, source, 'relations.ndjson');
-  var errorsStream = createWriteStream(inferredDir, source, 'errors.ndjson');
-  var logStream = createWriteStream(inferredDir, source, 'log');
+  var relationsStream = createWriteStream(inferredDir, dataset, 'relations.ndjson');
+  var errorsStream = createWriteStream(inferredDir, dataset, 'errors.ndjson');
+  var logStream = createWriteStream(inferredDir, dataset, 'log');
 
-  var sourceMeta = {
-    title: util.format('%s (inferred)', obj.source),
-    author: 'Histograph Reasoning Engine 🚀',
-    id: util.format('%s.%s', obj.source, inferredDir),
-    description: 'Created by Histograph Reasoning Engine',
-    license: 'MIT'
+  var datasetMeta = {
+    title: util.format('%s (inferred)', obj.dataset),
+    author: 'Histograph Reasoner 🚀',
+    id: util.format('%s.%s', obj.dataset, inferredDir),
+    description: 'Created by Histograph Reasoner',
+    license: 'GPL-3.0'
   };
 
-  var metaStream = createWriteStream(inferredDir, source, 'source.json');
-  metaStream.write(JSON.stringify(sourceMeta, null, 2));
+  var metaStream = createWriteStream(inferredDir, dataset, 'dataset.json');
+  metaStream.write(JSON.stringify(datasetMeta, null, 2));
 
   var stream = _(fs.createReadStream(pitsFile, {encoding: 'utf8'}))
     .split()
     .compact()
     .map(JSON.parse)
     .map(function(pit) {
-      return _(Object.keys(rules)).map(function(ruleSourceid) {
-        return _(rules[ruleSourceid])
+      return _(Object.keys(rules)).map(function(ruleDatasetid) {
+        return _(rules[ruleDatasetid])
           .filter(function(rule) {
             // Filter on PIT type for which rule is defined
             return rule.types.from === pit.type ||
@@ -197,13 +197,13 @@ function inferSource(obj, callback) {
             var normalizedOverride = {};
             if (rule.override) {
               rule.override.forEach(function(o) {
-                var from = normalize(o.from, obj.source);
+                var from = normalize(o.from, obj.dataset);
                 var to = {
                   to: o.to
                 };
 
                 if (o.to) {
-                  to.urn = normalize(o.to, ruleSourceid);
+                  to.urn = normalize(o.to, ruleDatasetid);
                 }
 
                 normalizedOverride[from] = to;
@@ -211,9 +211,9 @@ function inferSource(obj, callback) {
             }
 
             return {
-              source: obj.source,
+              dataset: obj.dataset,
               pit: pit,
-              ruleSourceid: ruleSourceid,
+              ruleDatasetid: ruleDatasetid,
               rule: rule,
               normalizedOverride: normalizedOverride
             };
@@ -273,15 +273,15 @@ _(rulesFiles)
   .map(function(filename) {
     var parts = filename.split('.');
     return {
-      source: parts[0],
+      dataset: parts[0],
       filename: path.join('.', rulesDir, filename)
     };
   })
   .filter(function(obj) {
-    return argv._.length === 0 || argv._.indexOf(obj.source) > -1;
+    return argv._.length === 0 || argv._.indexOf(obj.dataset) > -1;
   })
   .map(function(obj) {
-    return _.curry(inferSource, obj);
+    return _.curry(inferDataset, obj);
   })
   .nfcall([])
   .series()
