@@ -12,3 +12,6 @@ A later version will run on server as a standalone agent, and automatically upda
 ## Usage
 
     node index.js tgn
+    
+Copyright (C) 2015 [Waag Society](http://waag.org).
+
