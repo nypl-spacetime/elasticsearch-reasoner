@@ -1,290 +1,183 @@
-var fs = require('fs');
-var path = require('path');
-var util = require('util');
-var turf = require('turf');
-var _ = require('highland');
-var elasticsearch = require('elasticsearch');
-var config = require('histograph-config');
-var query = require('./query.json');
-var normalize = require('histograph-uri-normalizer').normalize;
-var client = new elasticsearch.Client({
-  host: config.elasticsearch.host + ':' + config.elasticsearch.port
-});
-var argv = require('minimist')(process.argv.slice(2));
-require('colors');
-
-function isFunction(functionToCheck) {
-  var getType = {};
-  return functionToCheck && getType.toString.call(functionToCheck) === '[object Function]';
+var H = require('highland')
+var normalizer = require('histograph-uri-normalizer')
+var elasticsearch = require('histograph-db-elasticsearch')
+var turf = {
+  centroid: require('turf-centroid')
 }
 
-function getUriOrId(dataset, uri, id) {
-  var result = uri;
-  if (id) {
-    result = id;
-    if (id.toString().indexOf('/') > -1) {
-      result = dataset + '/' + id;
-    }
-  }
-  return result;
+function isFunction (functionToCheck) {
+  var getType = {}
+  return functionToCheck && getType.toString.call(functionToCheck) === '[object Function]'
 }
 
-function ensureDir(inferredDir, dataset) {
+// Expand Histograph URNs
+function expandURN (id) {
   try {
-    fs.mkdirSync(path.join('.', inferredDir, util.format('%s.%s', dataset, inferredDir)));
-  } catch(e) {
-    // Ha! Do nothing!
+    id = normalizer.URNtoURL(id)
+  } catch (e) {
+    // TODO: use function from uri-normalizer
+    id = id.replace('urn:hgid:', '')
   }
+
+  return id
 }
 
-function createWriteStream(inferredDir, dataset, str) {
-  return fs.createWriteStream(path.join('.', inferredDir, util.format('%s.%s', dataset, inferredDir), util.format('%s.%s.%s', dataset, inferredDir, str)), {encoding: 'utf8'});
-}
+function executeQuery (query, data, callback) {
+  try {
+    var rule = data.rule
+    var pit = data.pit
+    var urn = normalizer.normalize(pit.id || pit.uri, data.ruleDatasetId)
 
-function infer(data, callback) {
-  var rule = data.rule;
-  var pit = data.pit;
-  var urn = normalize(pit.id || pit.uri, data.ruleDatasetid);
-
-  // Check if PIT's URI or ID is present in rule's override list
-  if (data.normalizedOverride[urn] !== undefined) {
-    if (data.normalizedOverride[urn]) {
-
-      var relation = {
-        from: getUriOrId(data.dataset, pit.uri, pit.id),
-        to: data.normalizedOverride[urn].to,
-        type: rule.relation
-      };
-
-      var result = {
-        relation: relation,
-        from: pit,
-        to: {
-          override: data.normalizedOverride[urn].to
-        }
-      };
-
-      callback(null, result);
-
+    // Check if PIT's URI or ID is present in rule's override list
+    if (data.normalizedOverride[urn] !== undefined) {
+      // if (data.normalizedOverride[urn]) {
+      //
+      //   var relation = {
+      //     from: getUriOrId(data.dataset, pit.uri, pit.id),
+      //     to: data.normalizedOverride[urn].to,
+      //     type: rule.relation
+      //   }
+      //
+      //   var result = {
+      //     relation: relation,
+      //     from: pit,
+      //     to: {
+      //       override: data.normalizedOverride[urn].to
+      //     }
+      //   }
+      //
+      //   callback(null, result)
+      //
+      // } else {
+      //   callback()
+      // }
     } else {
-      callback(null, {});
-    }
-  } else {
-
-    // Create Elasticsearch query
-    var centroid;
-    if (pit.geometry) {
-      centroid = turf.centroid(pit.geometry).geometry.coordinates;
-    }
-
-    query.query.filtered.filter.bool.must = [
-      {
-        term: {
-          type: rule.types.to
-        }
+      // Create Elasticsearch query
+      var centroid
+      if (pit.geometry) {
+        centroid = turf.centroid(pit.geometry).geometry.coordinates
       }
-    ];
 
-    if (rule.geoDistance) {
-      query.query.filtered.filter.bool.must.push({
-        geo_shape: {
-          geometry: {
-            shape: {
-              type: 'circle',
-              coordinates: centroid,
-              radius: util.format('%dm', rule.geoDistance)
-            }
+      query.query.filtered.filter.bool.must = [
+        {
+          term: {
+            type: rule.types.to
           }
         }
-      });
-    }
+      ]
 
-    // TODO: alles in rules: of default, of constant, of function(pit)
-
-    var name;
-    if (isFunction(rule.name)) {
-      name = rule.name(pit);
-    } else if (rule.name) {
-      name = rule.name;
-    } else {
-      name = pit.name;
-    }
-
-    name = name.replace(')', '').replace('(', '');
-
-    var textDistance = rule.textDistance ? rule.textDistance : 0;
-    query.query.filtered.query.query_string.query = util.format('%s~%d', name, textDistance);
-
-    client.search({
-      index: data.ruleDatasetid,
-      //type: 'hg:Place',
-      body: query
-    }).then(function(res) {
-      var result = {};
-
-      if (res.hits.hits.length > 0) {
-        var hit = res.hits.hits[0];
-
-        var relation = {
-          from: getUriOrId(data.dataset, pit.uri, pit.id),
-          to: getUriOrId(data.ruleDatasetid, hit._source.uri, hit._source.id),
-          type: rule.relation
-        };
-
-        result = {
-          relation: relation,
-          to: hit._source
-        };
+      if (rule.geoDistance && centroid) {
+        query.query.filtered.filter.bool.must.push({
+          geo_distance: {
+            distance: `${rule.geoDistance}m`,
+            centroid: centroid
+          }
+        })
       }
 
-      result.from = pit;
-      callback(null, result);
-    },
+      // TODO: stop als wel georule maar geen centroid!    //
+      // TODO: alles in rules: of default, of constant, of function(pit)
 
-    function(error) {
-      callback(error);
-    });
+      var name
+      if (isFunction(rule.name)) {
+        name = rule.name(pit)
+      } else if (rule.name) {
+        name = rule.name
+      } else {
+        name = pit.name
+      }
+
+      // TODO: Oh ja??
+      name = name.replace(')', '').replace('(', '')
+
+      var textDistance = rule.textDistance ? rule.textDistance : 0
+      query.query.filtered.query.query_string.query = `"${name}"~${textDistance}`
+
+      elasticsearch.query({
+        index: data.ruleDatasetId,
+        // type: 'hg:Place',
+        body: query
+      }, (err, results) => {
+        if (err) {
+          callback(err)
+          return
+        }
+
+        if (results.hits.hits.length > 0) {
+          var hit = results.hits.hits[0]
+
+          var relation = {
+            from: expandURN(pit.uri || pit.id),
+            to: expandURN(hit._source.uri || hit._source.id),
+            type: rule.relation
+          }
+
+          callback(null, {
+            type: 'relation',
+            obj: relation
+          })
+        } else {
+          // TODO: log het log het LOG HET
+          callback()
+        }
+      })
+    }
+  } catch (err) {
+    callback(err)
   }
 }
 
-function inferDataset(obj, callback) {
-  var dataset = obj.dataset
-  var rules = require('./' + obj.filename);
-  var pitsFile = path.join(config.api.dataDir, 'datasets', dataset, 'current', 'pits.ndjson');
-  var inferredDir = 'inferred';
+module.exports = function (options) {
+  const rules = require(options.rules)
+  const baseQuery = require('./query.json')
 
-  ensureDir(inferredDir, dataset);
+  return (pit) => {
+    return H(Object.keys(rules)).map((ruleDatasetId) => {
+      return H(rules[ruleDatasetId])
+        .filter((rule) => {
+          // Filter on PIT type for which rule is defined
+          return rule.types.from === pit.type ||
+          (rule.types.from.constructor === Array && rule.types.from.indexOf(pit.type) > -1)
+        })
+        .filter((rule) => {
+          // Apply the rule's general filter function (if defined)
+          if (rule.filter && isFunction(rule.filter)) {
+            return rule.filter(pit)
+          }
 
-  var relationsStream = createWriteStream(inferredDir, dataset, 'relations.ndjson');
-  var errorsStream = createWriteStream(inferredDir, dataset, 'errors.ndjson');
-  var logStream = createWriteStream(inferredDir, dataset, 'log');
+          return true
+        })
+        .map((rule) => {
+          // Normalize URLs and IDs in rule's override list to URNs
+          // using histograph-uri-normalizer
+          var normalizedOverride = {}
+          if (rule.override) {
+            //     rule.override.forEach(function(o) {
+            //       var from = normalizer.normalize(o.from, obj.dataset)
+            //       var to = {
+            //         to: o.to
+            //       }
+            //
+            //       if (o.to) {
+            //         to.urn = normalizer.normalize(o.to, ruleDatasetid)
+            //       }
+            //
+            //       normalizedOverride[from] = to
+            //     })
+          }
 
-  var datasetMeta = {
-    title: util.format('%s (inferred)', obj.dataset),
-    author: 'Histograph Reasoner 🚀',
-    id: util.format('%s.%s', obj.dataset, inferredDir),
-    description: 'Created by Histograph Reasoner',
-    license: 'GPL-3.0'
-  };
-
-  var metaStream = createWriteStream(inferredDir, dataset, 'dataset.json');
-  metaStream.write(JSON.stringify(datasetMeta, null, 2));
-
-  var stream = _(fs.createReadStream(pitsFile, {encoding: 'utf8'}))
-    .split()
-    .compact()
-    .map(JSON.parse)
-    .map(function(pit) {
-      return _(Object.keys(rules)).map(function(ruleDatasetid) {
-        return _(rules[ruleDatasetid])
-          .filter(function(rule) {
-            // Filter on PIT type for which rule is defined
-            return rule.types.from === pit.type ||
-              (rule.types.from.constructor === Array && rule.types.from.indexOf(pit.type) > -1);
-          })
-          .filter(function(rule) {
-            // Apply the rule's general filter function (if defined)
-            if (rule.filter && isFunction(rule.filter)) {
-              return rule.filter(pit);
-            }
-
-            return true;
-          })
-          .map(function(rule) {
-
-            // Normalize URLs and IDs in rule's override list to URNs
-            // using histograph-uri-normalizer
-            var normalizedOverride = {};
-            if (rule.override) {
-              rule.override.forEach(function(o) {
-                var from = normalize(o.from, obj.dataset);
-                var to = {
-                  to: o.to
-                };
-
-                if (o.to) {
-                  to.urn = normalize(o.to, ruleDatasetid);
-                }
-
-                normalizedOverride[from] = to;
-              });
-            }
-
-            return {
-              dataset: obj.dataset,
-              pit: pit,
-              ruleDatasetid: ruleDatasetid,
-              rule: rule,
-              normalizedOverride: normalizedOverride
-            };
-          });
-      });
+          return {
+            dataset: 'vissen', // obj.dataset,
+            pit: pit,
+            ruleDatasetId: ruleDatasetId,
+            rule: rule,
+            normalizedOverride: normalizedOverride
+          }
+        })
     })
-    .flatten()
-    .map(function(data) {
-      return _.curry(infer, data);
-    })
-    .nfcall([])
-    .parallel(10)
-    .errors(function(err) {
-      console.log(err);
-    });
-
-  stream
-    .fork()
-    .map(JSON.stringify)
-    .intersperse('\n')
-    .pipe(logStream)
-    .on('close', function() {
-      callback();
-    });
-
-  stream
-    .fork()
-    .pluck('relation')
-    .compact()
-    .map(JSON.stringify)
-    .intersperse('\n')
-    .pipe(relationsStream);
-
-  stream
-    .fork()
-    .filter(function(obj) {
-      return !obj.relation;
-    })
-    .pluck('from')
-    .compact()
-    .map(JSON.stringify)
-    .intersperse('\n')
-    .pipe(errorsStream);
+      .flatten()
+      .map(H.curry(executeQuery, Object.assign({}, baseQuery)))
+      .nfcall([])
+      .series()
+  }
 }
-
-var readDir = _.wrapCallback(fs.readdir);
-var readFile = _.wrapCallback(function(filename, callback) {
-  return fs.readFile(filename, {encoding: 'utf8'}, callback);
-});
-
-var rulesDir = 'rules';
-
-var rulesFiles = readDir(path.join('.', rulesDir))
-  .flatten();
-
-_(rulesFiles)
-  .map(function(filename) {
-    var parts = filename.split('.');
-    return {
-      dataset: parts[0],
-      filename: path.join('.', rulesDir, filename)
-    };
-  })
-  .filter(function(obj) {
-    return argv._.length === 0 || argv._.indexOf(obj.dataset) > -1;
-  })
-  .map(function(obj) {
-    return _.curry(inferDataset, obj);
-  })
-  .nfcall([])
-  .series()
-  .done(function() {
-    client.close();
-  });

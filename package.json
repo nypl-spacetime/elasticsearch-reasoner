@@ -1,42 +1,20 @@
 {
-  "name": "histograph-reasoning",
+  "name": "elasticsearch-reasoner",
   "version": "0.0.1",
-  "description": "Find relations between PITs from two different data sources, based upon set of rules",
+  "description": "",
   "main": "index.js",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/histograph/reasoning.git"
-  },
   "scripts": {
-    "test": "jshint index.js && jscs index.js"
+    "test": "standard"
   },
-  "author": "Bert Spaan",
-  "license": "GPL-3.0",
+  "author": "",
+  "license": "MIT",
   "devDependencies": {
-    "jscs": "^1.10.0",
-    "jshint": "^2.6.0",
-    "tape": "^3.4.0"
-  },
-  "jshintConfig": {
-    "node": true,
-    "globalstrict": false,
-    "undef": true,
-    "unused": true,
-    "noarg": true
-  },
-  "jscsConfig": {
-    "preset": "airbnb",
-    "requireCamelCaseOrUpperCaseIdentifiers": null,
-    "disallowMultipleVarDecl": true,
-    "requireMultipleVarDecl": null
+    "standard": "^6.0.8"
   },
   "dependencies": {
-    "colors": "^1.1.0",
-    "elasticsearch": "^4.1.0",
-    "highland": "^2.5.1",
-    "histograph-uri-normalizer": "histograph/uri-normalizer",
-    "histograph-config": "histograph/config",
-    "minimist": "^1.1.1",
-    "turf": "^2.0.2"
+    "highland": "^2.7.2",
+    "histograph-db-elasticsearch": "github:nypl-spacetime/histograph-db-elasticsearch",
+    "histograph-uri-normalizer": "github:histograph/uri-normalizer",
+    "turf-centroid": "^1.1.3"
   }
 }
