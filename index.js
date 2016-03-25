@@ -128,7 +128,7 @@ function executeQuery (query, data, callback) {
 }
 
 module.exports = function (options) {
-  const rules = require(options.rules)
+  const rules = options.rules
   const baseQuery = require('./query.json')
 
   return (pit) => {
