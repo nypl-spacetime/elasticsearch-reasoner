@@ -1,6 +1,6 @@
 {
   "name": "elasticsearch-reasoner",
-  "version": "0.0.1",
+  "version": "0.0.1-alpha",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "highland": "^2.7.2",
-    "histograph-db-elasticsearch": "github:nypl-spacetime/histograph-db-elasticsearch",
-    "histograph-uri-normalizer": "github:histograph/uri-normalizer",
+    "spacetime-db-elasticsearch": "nypl-spacetime/spacetime-db-elasticsearch",
+    "histograph-uri-normalizer": "histograph/uri-normalizer",
     "turf-centroid": "^1.1.3"
   }
 }

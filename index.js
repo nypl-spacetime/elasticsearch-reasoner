@@ -1,6 +1,6 @@
 var H = require('highland')
 var normalizer = require('histograph-uri-normalizer')
-var elasticsearch = require('histograph-db-elasticsearch')
+var elasticsearch = require('spacetime-db-elasticsearch')
 var turf = {
   centroid: require('turf-centroid')
 }
@@ -112,13 +112,28 @@ function executeQuery (query, data, callback) {
             type: rule.relation
           }
 
-          callback(null, {
-            type: 'relation',
-            obj: relation
-          })
+          callback(null, [
+            {
+              type: 'relation',
+              obj: relation
+            },
+            {
+              type: 'log',
+              obj: {
+                found: true,
+                from: name,
+                to: hit._source.name
+              }
+            }
+          ])
         } else {
-          // TODO: log het log het LOG HET
-          callback()
+          callback(null, {
+            type: 'log',
+            obj: {
+              found: false,
+              from: name
+            }
+          })
         }
       })
     }
@@ -127,8 +142,7 @@ function executeQuery (query, data, callback) {
   }
 }
 
-module.exports = function (options) {
-  const rules = options.rules
+module.exports = function (rules) {
   const baseQuery = require('./query.json')
 
   return (pit) => {
